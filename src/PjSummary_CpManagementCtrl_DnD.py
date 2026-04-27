@@ -71,7 +71,7 @@ ACTION_BUTTON_COLOR = (0xC0, 0xE8, 0xFF)
 BUTTON_LABELS: Tuple[str, ...] = (
     "期間",
     "division実績",
-    "division利益率順位",
+    "PJ別粗利金額ランキング",
     "プロジェクト別損益",
     "グループ別損益",
     "division別損益",
