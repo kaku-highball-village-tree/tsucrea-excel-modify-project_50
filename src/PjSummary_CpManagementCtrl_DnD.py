@@ -71,15 +71,17 @@ ACTION_BUTTON_COLOR = (0xC0, 0xE8, 0xFF)
 BUTTON_LABELS: Tuple[str, ...] = (
     "期間",
     "division実績",
-    "division利益率順位",
+    "PJ別粗利金額ランキング",
     "プロジェクト別損益",
     "グループ別損益",
     "division別損益",
     "CP別経営管理用(計上division)",
     "CP別経営管理用(計上グループ)",
     "PJ別損益計算書",
+    "All_経営管理データ",
 )
 ALL_PROJECT_FILE_NAME: str = "PJサマリ_単・累計_AllProject.xlsx"
+ALL_MANAGEMENT_DATA_FILE_NAME: str = "All_経営管理データ.xlsx"
 ALL_PROJECT_SELECTION_TOKEN: str = "__ALLPROJECT__"
 COMPANY_OR_DIVISION_FILE_NAME: str = "company_or_division.txt"
 COMPANY_OR_DIVISION_COMPANY: str = "company"
@@ -1142,6 +1144,42 @@ def handle_cp_management_group_right_down() -> None:
     os.startfile(pszGroupDirectory)
 
 
+def handle_all_management_data_left_down() -> None:
+    pszExecutionRoot = find_latest_execution_root_directory()
+    if pszExecutionRoot is None:
+        show_error_message_box(
+            "Error: 出力フォルダーがまだ作成されていません。",
+            "SellGeneralAdminCost_Allocation_DnD",
+        )
+        return
+    pszTargetPath = os.path.join(pszExecutionRoot, ALL_MANAGEMENT_DATA_FILE_NAME)
+    if not os.path.isfile(pszTargetPath):
+        show_error_message_box(
+            "Error: ファイルが見つかりません。\n" + pszTargetPath,
+            "SellGeneralAdminCost_Allocation_DnD",
+        )
+        return
+    os.startfile(pszTargetPath)
+
+
+def handle_all_management_data_right_down() -> None:
+    pszExecutionRoot = find_latest_execution_root_directory()
+    if pszExecutionRoot is None:
+        show_error_message_box(
+            "Error: 出力フォルダーがまだ作成されていません。",
+            "SellGeneralAdminCost_Allocation_DnD",
+        )
+        return
+    pszTargetPath = os.path.join(pszExecutionRoot, ALL_MANAGEMENT_DATA_FILE_NAME)
+    if not os.path.isfile(pszTargetPath):
+        show_error_message_box(
+            "Error: ファイルが見つかりません。\n" + pszTargetPath,
+            "SellGeneralAdminCost_Allocation_DnD",
+        )
+        return
+    os.startfile(pszExecutionRoot)
+
+
 def update_action_button_layout(iWindowHandle: int) -> None:
     if not g_action_button_handles:
         return
@@ -1189,6 +1227,8 @@ def handle_action_button_left_click(iButtonId: int) -> None:
         handle_cp_management_group_left_down()
     elif iButtonId == BUTTON_ID_BASE + 8:
         handle_pj_income_statement_left_down()
+    elif iButtonId == BUTTON_ID_BASE + 9:
+        handle_all_management_data_left_down()
 
 
 def handle_action_button_right_click(iButtonId: int) -> None:
@@ -1210,6 +1250,8 @@ def handle_action_button_right_click(iButtonId: int) -> None:
         handle_cp_management_group_right_down()
     elif iButtonId == BUTTON_ID_BASE + 8:
         handle_pj_income_statement_right_down()
+    elif iButtonId == BUTTON_ID_BASE + 9:
+        handle_all_management_data_right_down()
 
 
 def set_right_button_down_handle(iControlHandle: Optional[int]) -> None:
