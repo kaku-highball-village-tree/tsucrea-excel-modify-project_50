@@ -7446,6 +7446,8 @@ def _build_all_management_data_by_com(
     objExcel.Visible = False
     objExcel.DisplayAlerts = False
     objTargetWorkbook = None
+    iInitialTargetSheetCount: int = 0
+    iSuccessfulCopyAttempts: int = 0
 
     def get_active_workbook_name() -> str:
         try:
@@ -7472,16 +7474,56 @@ def _build_all_management_data_by_com(
         except Exception:  # noqa: BLE001
             return "<Unavailable>"
 
+    def get_target_workbook_full_name() -> str:
+        if objTargetWorkbook is None:
+            return "<None>"
+        try:
+            return str(objTargetWorkbook.FullName)
+        except Exception:  # noqa: BLE001
+            return "<Unavailable>"
+
+    def get_output_file_state(pszPath: str) -> str:
+        if not os.path.exists(pszPath):
+            return "exists=False size=<None> mtime=<None>"
+        try:
+            iSize: int = os.path.getsize(pszPath)
+            fMtime: float = os.path.getmtime(pszPath)
+            pszMtime: str = datetime.fromtimestamp(fMtime).strftime("%Y-%m-%d %H:%M:%S")
+            return f"exists=True size={iSize} mtime={pszMtime}"
+        except Exception:  # noqa: BLE001
+            return "exists=True size=<Unavailable> mtime=<Unavailable>"
+
+    def write_diag_event(
+        pszResult: str,
+        pszPhase: str,
+        pszAction: str,
+        pszMessage: str,
+        pszSourceWorkbookName: str = "<None>",
+        pszSourceSheetName: str = "<None>",
+    ) -> None:
+        write_diag_log(
+            pszResult,
+            f"timestamp={datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
+            f"phase={pszPhase} action={pszAction} "
+            f"target_workbook_name={get_target_workbook_name()} "
+            f"target_workbook_full_name={get_target_workbook_full_name()} "
+            f"target_sheet_count={get_target_sheet_count()} "
+            f"active_workbook_name={get_active_workbook_name()} "
+            f"source_workbook_name={pszSourceWorkbookName} "
+            f"source_sheet_name={pszSourceSheetName} "
+            f"output_path={os.path.abspath(pszOutputPath)} "
+            f"output_file_state=\"{get_output_file_state(os.path.abspath(pszOutputPath))}\" "
+            f"result={pszResult} message=\"{pszMessage}\"",
+        )
+
     try:
         write_log("INFO", f"Base workbook = {objOrderedSourcePaths[0]}")
         objTargetWorkbook = objExcel.Workbooks.Open(os.path.abspath(objOrderedSourcePaths[0]))
-        write_diag_log(
-            "INFO",
-            "phase=T1 action=OPEN "
-            f"target_workbook_name={get_target_workbook_name()} "
-            f"target_sheet_count={get_target_sheet_count()} "
-            f"active_workbook_name={get_active_workbook_name()}",
-        )
+        try:
+            iInitialTargetSheetCount = int(get_target_sheet_count())
+        except Exception:  # noqa: BLE001
+            iInitialTargetSheetCount = 0
+        write_diag_event("INFO", "T1", "OPEN", "Base workbook opened")
         write_log("INFO", "Start merging additional workbooks")
         for pszSourcePath in objOrderedSourcePaths[1:]:
             write_log("INFO", f"Processing file = {pszSourcePath}")
@@ -7491,42 +7533,72 @@ def _build_all_management_data_by_com(
                 write_log("INFO", f"Sheet count = {iSheetCount}")
                 for iIndex in range(1, iSheetCount + 1):
                     pszSheetName: str = str(objSourceWorkbook.Worksheets(iIndex).Name)
-                    write_diag_log(
+                    iTargetSheetCountBeforeCopy: int = objTargetWorkbook.Worksheets.Count
+                    write_diag_event(
                         "INFO",
-                        "phase=T2 action=COPY_BEFORE "
-                        f"target_workbook_name={get_target_workbook_name()} "
-                        f"target_sheet_count={get_target_sheet_count()} "
-                        f"active_workbook_name={get_active_workbook_name()} "
-                        f"source_workbook_name={os.path.basename(pszSourcePath)} "
-                        f"source_sheet_name={pszSheetName}",
+                        "T2",
+                        "COPY_BEFORE",
+                        "Copy start",
+                        os.path.basename(pszSourcePath),
+                        pszSheetName,
                     )
                     write_log("INFO", f"Copy sheet start = {pszSheetName}")
                     try:
+                        objTargetWorkbook.Activate()
                         objSourceWorkbook.Worksheets(iIndex).Copy(
                             After=objTargetWorkbook.Worksheets(objTargetWorkbook.Worksheets.Count)
                         )
+                        iSuccessfulCopyAttempts += 1
                         write_log("INFO", f"Copy success = {pszSheetName}")
-                        write_diag_log(
+                        write_diag_event(
                             "INFO",
-                            "phase=T3 action=COPY_AFTER "
-                            f"target_workbook_name={get_target_workbook_name()} "
-                            f"target_sheet_count={get_target_sheet_count()} "
-                            f"active_workbook_name={get_active_workbook_name()} "
-                            f"source_workbook_name={os.path.basename(pszSourcePath)} "
-                            f"source_sheet_name={pszSheetName}",
+                            "T3",
+                            "COPY_AFTER",
+                            "Copy success",
+                            os.path.basename(pszSourcePath),
+                            pszSheetName,
                         )
+                        iTargetSheetCountAfterCopy: int = objTargetWorkbook.Worksheets.Count
+                        if iTargetSheetCountAfterCopy <= iTargetSheetCountBeforeCopy:
+                            write_diag_event(
+                                "WARN",
+                                "T3",
+                                "JUDGE_A",
+                                (
+                                    "condition=A copy_success_exists_and_target_sheet_count_not_increased "
+                                    f"before={iTargetSheetCountBeforeCopy} after={iTargetSheetCountAfterCopy}"
+                                ),
+                                os.path.basename(pszSourcePath),
+                                pszSheetName,
+                            )
+                        if get_active_workbook_name() != get_target_workbook_name():
+                            write_diag_event(
+                                "WARN",
+                                "T3",
+                                "JUDGE_B",
+                                "condition=B active_workbook_name!=target_workbook_name",
+                                os.path.basename(pszSourcePath),
+                                pszSheetName,
+                            )
                     except Exception as exc:  # noqa: BLE001
                         write_log("ERROR", f"Copy failed = {pszSheetName}")
                         write_log("ERROR", f"Exception = {exc}")
+                        write_diag_event(
+                            "ERROR",
+                            "T3",
+                            "COPY_AFTER",
+                            f"Copy failed: {exc}",
+                            os.path.basename(pszSourcePath),
+                            pszSheetName,
+                        )
                         raise
             finally:
-                write_diag_log(
+                write_diag_event(
                     "INFO",
-                    "phase=T4 action=CLOSE_BEFORE "
-                    f"target_workbook_name={get_target_workbook_name()} "
-                    f"target_sheet_count={get_target_sheet_count()} "
-                    f"active_workbook_name={get_active_workbook_name()} "
-                    f"source_workbook_name={os.path.basename(pszSourcePath)}",
+                    "T4",
+                    "CLOSE_BEFORE",
+                    "Source workbook close start",
+                    os.path.basename(pszSourcePath),
                 )
                 objSourceWorkbook.Close(SaveChanges=False)
                 write_log("INFO", f"Closed workbook = {pszSourcePath}")
@@ -7539,25 +7611,24 @@ def _build_all_management_data_by_com(
             objSheet.Name = pszUniqueName
             objSeenNames.add(pszUniqueName)
 
-        write_diag_log(
-            "INFO",
-            "phase=T5 action=SAVEAS_BEFORE "
-            f"target_workbook_name={get_target_workbook_name()} "
-            f"target_sheet_count={get_target_sheet_count()} "
-            f"active_workbook_name={get_active_workbook_name()} "
-            f"source_workbook_name=<None> source_sheet_name=<None>",
-        )
+        iActualTargetSheetCount: int = objTargetWorkbook.Worksheets.Count
+        iExpectedTargetSheetCount: int = iInitialTargetSheetCount + iSuccessfulCopyAttempts
+        write_diag_event("INFO", "T5", "SAVEAS_BEFORE", "SaveAs start")
+        if iActualTargetSheetCount < iExpectedTargetSheetCount:
+            write_diag_event(
+                "WARN",
+                "T5",
+                "JUDGE_C",
+                (
+                    "condition=C actual_target_sheet_count<expected_target_sheet_count "
+                    f"actual_target_sheet_count={iActualTargetSheetCount} "
+                    f"expected_target_sheet_count={iExpectedTargetSheetCount}"
+                ),
+            )
         write_log("INFO", f"Saving as = {pszOutputPath}")
         objTargetWorkbook.SaveAs(os.path.abspath(pszOutputPath), FileFormat=51)
         write_log("INFO", "Save complete")
-        write_diag_log(
-            "INFO",
-            "phase=T6 action=SAVEAS_AFTER "
-            f"target_workbook_name={get_target_workbook_name()} "
-            f"target_sheet_count={get_target_sheet_count()} "
-            f"active_workbook_name={get_active_workbook_name()} "
-            f"source_workbook_name=<None> source_sheet_name=<None>",
-        )
+        write_diag_event("INFO", "T6", "SAVEAS_AFTER", "SaveAs complete")
     finally:
         if objTargetWorkbook is not None:
             objTargetWorkbook.Close(SaveChanges=False)
